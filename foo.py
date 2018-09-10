@@ -4,6 +4,7 @@ import inspect
 from inspect import currentframe, getargvalues, getfullargspec, getmembers, isfunction
 import types
 import re
+import torch.cuda.profiler as profiler
 
 class NvtxPatcher:
     
@@ -15,7 +16,6 @@ class NvtxPatcher:
         def wrapper(*args, **kwargs):
             frame = currentframe()
             v = getargvalues(frame)
-            print("FUNC = {}".format(func))
             argspec = getfullargspec(func)
             formal_arg_names = argspec.args
             s = "{'op':%s," % v.locals["func"].__name__
@@ -78,7 +78,56 @@ class NvtxPatcher:
             cls.registry.add(fqn)
             exec("{}=patched".format(fqn))
             
-        print("{}\n{}\n".format("Functions registered for NVTX range annotation:", function_list))
+    @classmethod        
+    # convNd is a built-in, so can't be registered using the non-builtin approach above
+    def patch_conv(cls, dim_count, module=torch.nn.functional):
+        fun_name = "{}.conv{}d".format(module.__name__, str(dim_count))
+        # Function already patched
+        if fun_name in cls.registry:
+            return
+        temp = eval(fun_name)
+        def decorator(fun):
+            def wrapper(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1):
+                input_size = tuple(input.size())
+                weight_size = tuple(weight.size())
+                # Interpolate numbers as strings because some can be one-elem tuples as well
+                nvtx_str = "{op:'conv%sd', input_shape:%s, weight_shape:%s, stride:%s, padding:%s, dilation:%s, groups:%s}" % (dim_count,input_size, weight_size, str(stride), str(padding), str(dilation), str(groups))
+                nvtx.range_push(nvtx_str)
+                op = fun(input, weight, bias, stride, padding, dilation, groups)
+                nvtx.range_pop()
+                return op
+            return wrapper
+        patched = decorator(temp)
+        exec("{}=patched".format(fun_name))
+        return patched
+ 
+    @classmethod        
+    # convNd is a built-in, so can't be registered using the non-builtin approach above
+    def patch_conv_transpose(cls, dim_count, module=torch.nn.functional):
+        fun_name = "{}.conv_transpose{}d".format(module.__name__, str(dim_count))
+        # Function already patched
+        if fun_name in cls.registry:
+            return
+        temp = eval(fun_name)
+        def decorator(fun):
+            def wrapper(input, weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1):
+                input_size = tuple(input.size())
+                weight_size = tuple(weight.size())
+                # Interpolate numbers as strings because some can be one-elem tuples as well
+                nvtx_str = "{op:'conv_transpose%sd', input_shape:%s, weight_shape:%s, stride:%s, padding:%s, output_padding:%s, groups:%s, dilation:%s}" % (dim_count,input_size, weight_size, str(stride), str(padding), str(output_padding), str(groups), str(dilation))
+                nvtx.range_push(nvtx_str)
+                op = fun(input, weight, bias, stride, padding, dilation, groups)
+                nvtx.range_pop()
+                return op
+            return wrapper
+        patched = decorator(temp)
+        exec("{}=patched".format(fun_name))
+        return patched
+             
+    @classmethod
+    def print_registered_functions(cls):
+              print("Functions registered for NVTX range annotation:\n{}\n".format(str(cls.registry)))
+
     
 patterns = ["conv[1-3]?(d|(\_transpose[1-3]d))",
      "(un)?fold",
@@ -116,18 +165,73 @@ patterns = ["conv[1-3]?(d|(\_transpose[1-3]d))",
 
 NvtxPatcher.register_non_builtins(
     torch.nn.functional, patterns)
+                    
+for i in range(1, 4):
+    NvtxPatcher.patch_conv(i)               
+    NvtxPatcher.patch_conv_transpose(i)
 
 print("built-ins (manual monkey-patching required):")
 print(NvtxPatcher.list_non_builtins(torch.nn.functional, patterns))
-            
+                    
+NvtxPatcher.print_registered_functions()
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+
+class Net(nn.Module):
+
+    def __init__(self):
+        super(Net, self).__init__()
+        # 1 input image channel, 6 output channels, 5x5 square convolution
+        # kernel
+        self.conv1 = nn.Conv2d(1, 6, 5)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        # an affine operation: y = Wx + b
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+
+    def forward(self, x):
+        # Max pooling over a (2, 2) window
+        x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
+        # If the size is a square you can only specify a single number
+        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+        x = x.view(-1, self.num_flat_features(x))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+
+
 with torch.autograd.profiler.emit_nvtx():
 
-    foo = torch.randn(1, 3, 5, 5).cuda()
-    bar = torch.randn(4, 3, 3, 3).cuda()
-    baz = torch.randn(4, 4).cuda()
-    qux = torch.randn(4, 4).cuda()
-#    result = torch.nn.functional.conv2d(foo, bar)
-    result = torch.nn.functional.linear(baz, qux)
-    result = torch.nn.functional.relu(result)
-    rezult = torch.nn.functional.dropout(result, p=0.5)
-    print(result) 
+  net = Net()
+
+  input = torch.randn(1, 1, 32, 32)
+  out = net(input)
+
+  target = torch.randn(10)  # a dummy target, for example
+  target = target.view(1, -1)  # make it the same shape as output
+  criterion = nn.MSELoss()
+
+  # create your optimizer
+  optimizer = optim.SGD(net.parameters(), lr=0.01)
+
+  # in your training loop:
+  optimizer.zero_grad()   # zero the gradient buffers
+
+  profiler.start()
+  output = net(input)
+  loss = criterion(output, target)
+  loss.backward()
+  optimizer.step()    # Does the update
+  profiler.stop()
