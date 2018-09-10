@@ -1,10 +1,14 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 import torch.cuda.nvtx as nvtx
+import torch.cuda.profiler as profiler
+
 import inspect
 from inspect import currentframe, getargvalues, getfullargspec, getmembers, isfunction
 import types
 import re
-import torch.cuda.profiler as profiler
 
 class NvtxPatcher:
     
@@ -175,15 +179,11 @@ print(NvtxPatcher.list_non_builtins(torch.nn.functional, patterns))
                     
 NvtxPatcher.print_registered_functions()
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 
-class Net(nn.Module):
+class LeNet5(nn.Module):
 
     def __init__(self):
-        super(Net, self).__init__()
+        super(LeNet5, self).__init__()
         # 1 input image channel, 6 output channels, 5x5 square convolution
         # kernel
         self.conv1 = nn.Conv2d(1, 6, 5)
@@ -214,7 +214,7 @@ class Net(nn.Module):
 
 with torch.autograd.profiler.emit_nvtx():
 
-  net = Net()
+  net = LeNet5()
 
   input = torch.randn(1, 1, 32, 32)
   out = net(input)
