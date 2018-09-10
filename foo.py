@@ -103,5 +103,8 @@ with torch.autograd.profiler.emit_nvtx():
 
     foo = torch.randn(1, 3, 5, 5).cuda()
     bar = torch.randn(4, 3, 3, 3).cuda()
-    result = torch.nn.functional.conv2d(foo, bar)
+    baz = torch.randn(4, 4).cuda()
+    qux = torch.randn(4, 4).cuda()
+#    result = torch.nn.functional.conv2d(foo, bar)
+    result = torch.nn.functional.linear(baz, qux)
     print(result) 
