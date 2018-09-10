@@ -15,6 +15,7 @@ class NvtxPatcher:
         def wrapper(*args, **kwargs):
             frame = currentframe()
             v = getargvalues(frame)
+            print("FUNC = {}".format(func))
             argspec = getfullargspec(func)
             formal_arg_names = argspec.args
             s = "{'op':%s," % v.locals["func"].__name__
@@ -34,22 +35,37 @@ class NvtxPatcher:
             nvtx.range_pop()
             return result
         return wrapper
-    
+
     @classmethod
-    def register_module(cls, module, regex_filt_lst=None, log=True):
+    def list_non_builtins(cls, module, regex_filt_lst=None, log=True):
         if not isinstance(regex_filt_lst, list) and regex_filt_lst is not None:
             regex_filt_lst = list(regex_filt_lst)
         if isinstance(module, str):
             module = eval(module)
         name_list = dir(module)
-        mod_funcs = [_a for _a in name_list if
-                     (isinstance(getattr(module, _a), types.FunctionType) or
-                      isinstance(getattr(module, _a), types.BuiltinFunctionType) or
-                     isinstance(getattr(module, _a), types.BuiltinMethodType))]
+        builtin_funcs_methods = [_a for _a in name_list if
+                                 (isinstance(getattr(module, _a), types.BuiltinFunctionType) or
+                                  isinstance(getattr(module, _a), types.BuiltinMethodType))]
+        match_any = lambda txt:  any((map(lambda x: re.match(r"%s" % x, txt), regex_filt_lst)))
+        if regex_filt_lst is not None:
+            function_list = [_x for _x in builtin_funcs_methods if match_any(_x)]
+        else: 
+            function_list = [_x for _x in builtin_funcs_methods]
+        return function_list 
+                                 
+    @classmethod
+    def register_non_builtins(cls, module, regex_filt_lst=None, log=True):
+        if not isinstance(regex_filt_lst, list) and regex_filt_lst is not None:
+            regex_filt_lst = list(regex_filt_lst)
+        if isinstance(module, str):
+            module = eval(module)
+        name_list = dir(module)
+        non_builtin_funcs = [_a for _a in name_list if
+                     isinstance(getattr(module, _a), types.FunctionType)]
         
         match_any = lambda txt:  any((map(lambda x: re.match(r"%s" % x, txt), regex_filt_lst)))
         if regex_filt_lst is not None:
-            function_list = [_x for _x in mod_funcs if match_any(_x)]
+            function_list = [_x for _x in non_builtin_funcs if match_any(_x)]
         else: 
             function_list = [_x for _x in mod_funcs]
             
@@ -63,41 +79,46 @@ class NvtxPatcher:
             exec("{}=patched".format(fqn))
             
         print("{}\n{}\n".format("Functions registered for NVTX range annotation:", function_list))
-        
-np = NvtxPatcher.register_module(torch.nn.functional,
-                                 ["conv[1-3]?(d|(\_transpose[1-3]d))",
-                                 "(un)?fold",
-                                  "(avg|max)_pool",
-                                 "max_unpool[1-3]d",
-                                 "lp_pool[1-3]d",
-                                 "adaptive_(avg|max)_pool[1-3]d",
-                                 "threshold",
-                                 "(leaky_)?[p-s]?r?elu_?6?",
-                                 "(hard)?tanh",
-                                 "glu",
-                                 "(log)?sigmoid",
-                                 "(hard|soft|tanh)shrink",
-                                 "soft(sign|plus|min)",
-                                 "(gumbel_|log_)?softmax",
-                                 "(batch|layer|instance|local_response)_norm",
-                                 "normalize",
-                                 "(bi)?linear",
-                                 "(alpha_)?dropout([2-3]d)?",
-                                 "embedding(_bag)?",
-                                 "pairwise_distance",
-                                 "cosine_similarity",
-                                 "(binary_)?cross_entropy",
-                                 "(poisson_)?nll_loss",
-                                 "(cosine|hinge)_embedding_loss",
-                                 "kl_div",
-                                 "((smooth_)?l1|mse)_loss",
-                                 "(multilabel|multi)?_margin_(soft_?)(ranking)?_loss",
-                                 "(soft|triplet)_margin_loss",
-                                 "pad",
-                                 "pixel_shuffle",
-                                 "interpolate",
-                                 "upsample_?(bilinear|nearest)?",
-                                 "(affine_)?grid(_sample)?"])
+    
+patterns = ["[conv[1-3]?(d|(\_transpose[1-3]d))",
+     "(un)?fold",
+     "(avg|max)_pool",
+     "max_unpool[1-3]d",
+     "lp_pool[1-3]d",
+     "adaptive_(avg|max)_pool[1-3]d",
+     "threshold",
+     "(leaky_)?[p-s]?r?elu_?6?",
+     "(hard)?tanh",
+     "glu",
+     "(log)?sigmoid",
+     "(hard|soft|tanh)shrink",
+     "soft(sign|plus|min)",
+     "(gumbel_|log_)?softmax",
+     "(batch|layer|instance|local_response)_norm",
+     "normalize",
+     "(bi)?linear",
+     "(alpha_)?dropout([2-3]d)?",
+     "embedding(_bag)?",
+     "pairwise_distance",
+     "cosine_similarity",
+     "(binary_)?cross_entropy",
+     "(poisson_)?nll_loss",
+     "(cosine|hinge)_embedding_loss",
+     "kl_div",
+     "((smooth_)?l1|mse)_loss",
+     "(multilabel|multi)?_margin_(soft_?)(ranking)?_loss",
+     "(soft|triplet)_margin_loss",
+     "pad",
+     "pixel_shuffle",
+     "interpolate",
+     "upsample_?(bilinear|nearest)?",
+     "(affine_)?grid(_sample)?"]
+
+NvtxPatcher.register_non_builtins(
+    torch.nn.functional, patterns)
+
+print("built-ins (manual monkey-patching required):")
+print(NvtxPatcher.list_non_builtins(torch.nn.functional, patterns))
             
 with torch.autograd.profiler.emit_nvtx():
 
@@ -107,4 +128,6 @@ with torch.autograd.profiler.emit_nvtx():
     qux = torch.randn(4, 4).cuda()
 #    result = torch.nn.functional.conv2d(foo, bar)
     result = torch.nn.functional.linear(baz, qux)
+    result = torch.nn.functional.relu(result)
+    rezult = torch.nn.functional.dropout(result, p=0.5)
     print(result) 
