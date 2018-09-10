@@ -80,7 +80,7 @@ class NvtxPatcher:
             
         print("{}\n{}\n".format("Functions registered for NVTX range annotation:", function_list))
     
-patterns = ["[conv[1-3]?(d|(\_transpose[1-3]d))",
+patterns = ["conv[1-3]?(d|(\_transpose[1-3]d))",
      "(un)?fold",
      "(avg|max)_pool",
      "max_unpool[1-3]d",
