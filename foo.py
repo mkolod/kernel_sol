@@ -5,15 +5,13 @@ from inspect import currentframe, getargvalues, getfullargspec, getmembers, isfu
 import types
 import re
 
-
 class NvtxPatcher:
     
     registry = set()
-#    nvtx_handle = nvtx._libnvToolsExt()
+    nvtx_handle = nvtx._libnvToolsExt()
     
     @staticmethod
     def nvtx_monkey_patch(func):
-        print("FOO")
         def wrapper(*args, **kwargs):
             frame = currentframe()
             v = getargvalues(frame)
@@ -31,10 +29,10 @@ class NvtxPatcher:
             overrides={k:str(v) for k, v in v.locals["kwargs"].items()}
             defaults.update(overrides)
             s += "%s}" % str(defaults).strip("{}")
-            print(s)
             nvtx.range_push(s)
-            func(*args, **kwargs)
+            result = func(*args, **kwargs)
             nvtx.range_pop()
+            return result
         return wrapper
     
     @classmethod
@@ -60,16 +58,13 @@ class NvtxPatcher:
                 continue
             fqn = "{}.{}".format(module.__name__, name)
             temp = eval(fqn)
-            print(fqn)
-            print(temp)
-            # NvtxPatcher
             patched = NvtxPatcher.nvtx_monkey_patch(temp)
             cls.registry.add(fqn)
             exec("{}=patched".format(fqn))
             
         print("{}\n{}\n".format("Functions registered for NVTX range annotation:", function_list))
         
-NvtxPatcher.register_module(torch.nn.functional,
+np = NvtxPatcher.register_module(torch.nn.functional,
                                  ["conv[1-3]?(d|(\_transpose[1-3]d))",
                                  "(un)?fold",
                                   "(avg|max)_pool",
@@ -103,13 +98,10 @@ NvtxPatcher.register_module(torch.nn.functional,
                                  "interpolate",
                                  "upsample_?(bilinear|nearest)?",
                                  "(affine_)?grid(_sample)?"])
- 
+            
 with torch.autograd.profiler.emit_nvtx():
 
     foo = torch.randn(1, 3, 5, 5).cuda()
     bar = torch.randn(4, 3, 3, 3).cuda()
-    print(torch.nn.functional.log_softmax(foo))
-    print("Result")
-    print(torch.nn.functional.conv2d)
     result = torch.nn.functional.conv2d(foo, bar)
     print(result) 
