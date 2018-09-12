@@ -219,12 +219,12 @@ class LeNet5(nn.Module):
 
 with torch.autograd.profiler.emit_nvtx():
 
-  net = LeNet5()
+  net = LeNet5().cuda()
 
-  input = torch.randn(1, 1, 32, 32)
+  input = torch.randn(1, 1, 32, 32).cuda()
   out = net(input)
 
-  target = torch.randn(10)  # a dummy target, for example
+  target = torch.randn(10).cuda()  # a dummy target, for example
   target = target.view(1, -1)  # make it the same shape as output
   criterion = nn.MSELoss()
 
