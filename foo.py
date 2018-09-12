@@ -22,12 +22,13 @@ class NvtxPatcher:
             v = getargvalues(frame)
             argspec = getfullargspec(func)
             formal_arg_names = argspec.args
-            s = "{'op':%s," % v.locals["func"].__name__
+            s = "{'op':'%s'," % v.locals["func"].__name__
             for idx, val in enumerate(v.locals["args"]):
                 name = formal_arg_names[idx]
                 if isinstance(val, torch.Tensor):
-                    name += "_shape"
-                    val = tuple(val.size())
+                    name += "_tensor"
+                    value = {'shape': tuple(val.size()), 'type': str(val.dtype).split(".")[-1]}
+                    val = value     
                 s += "'%s':%s," % (name, str(val))
             num_def=len(argspec.defaults)
             defaults = dict(zip(argspec.args[-num_def:], argspec.defaults))
@@ -92,10 +93,12 @@ class NvtxPatcher:
         temp = eval(fun_name)
         def decorator(fun):
             def wrapper(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1):
-                input_size = tuple(input.size())
-                weight_size = tuple(weight.size())
+
+                input_dict = {'shape': tuple(input.size()), 'type': str(input.dtype).split(".")[-1]}
+                weight_dict = {'shape': tuple(weight.size()), 'type': str(weight.dtype).split(".")[-1]}
+
                 # Interpolate numbers as strings because some can be one-elem tuples as well
-                nvtx_str = "{op:'conv%sd', input_shape:%s, weight_shape:%s, stride:%s, padding:%s, dilation:%s, groups:%s}" % (dim_count,input_size, weight_size, str(stride), str(padding), str(dilation), str(groups))
+                nvtx_str = "{op:'conv%sd', input_tensor:%s, weight_tensor:%s, stride:%s, padding:%s, dilation:%s, groups:%s}" % (dim_count, str(input_dict), str(weight_dict), str(stride), str(padding), str(dilation), str(groups))
                 nvtx.range_push(nvtx_str)
                 op = fun(input, weight, bias, stride, padding, dilation, groups)
                 nvtx.range_pop()
@@ -115,10 +118,11 @@ class NvtxPatcher:
         temp = eval(fun_name)
         def decorator(fun):
             def wrapper(input, weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1):
-                input_size = tuple(input.size())
-                weight_size = tuple(weight.size())
+
+                input_dict = {'shape': tuple(input.size()), 'type': str(input.dtype).split(".")[-1]}
+                weight_dict = {'shape': tuple(weight.size()), 'type': str(weight.dtype).split(".")[-1]}
                 # Interpolate numbers as strings because some can be one-elem tuples as well
-                nvtx_str = "{op:'conv_transpose%sd', input_shape:%s, weight_shape:%s, stride:%s, padding:%s, output_padding:%s, groups:%s, dilation:%s}" % (dim_count,input_size, weight_size, str(stride), str(padding), str(output_padding), str(groups), str(dilation))
+                nvtx_str = "{op:'conv_transpose%sd', input_tensor:%s, weight_tensor:%s, stride:%s, padding:%s, output_padding:%s, groups:%s, dilation:%s}" % (dim_count, str(input_dict), str(weight_dict), str(stride), str(padding), str(output_padding), str(groups), str(dilation))
                 nvtx.range_push(nvtx_str)
                 op = fun(input, weight, bias, stride, padding, dilation, groups)
                 nvtx.range_pop()
@@ -202,6 +206,7 @@ class LeNet5(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
+        x = F.softmax(x)
         return x
 
     def num_flat_features(self, x):
