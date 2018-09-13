@@ -359,6 +359,7 @@ for k,id,start,end in result:
 
 	kernel.kDuration = end - start
 
+print(list_hotspots())
 hs_names, hs_times = zip(*list_hotspots()) 
 total_time = sum(hs_times)
 percentages = [100.0 * time / total_time for time in hs_times]
@@ -370,7 +371,7 @@ kernel_dict = {}
 for idx, hs_name in enumerate(hs_names):
 
 	kernel_dict[demangle(hs_name)] = {
-		'hotspot_num': idx,
+		'hotspot_rank': idx,
 		'total_time': hs_times[idx],
 		'percent_of_total': percentages[idx],
 		'instances': []
@@ -466,20 +467,21 @@ for kernel in Kernel.kernels:
 
 	#print(kernel.__dict__)
 
-sorted_k_dict = sorted(kernel_dict.items(), key=lambda x: x[1]['hotspot_num'])
+sorted_k_dict = sorted(kernel_dict.items(), key=lambda x: x[1]['hotspot_rank'])
 
 for name, v in sorted_k_dict:
 #	print("{}: {}\n\n".format(name, v))
-	print("\nHotspot num: {}".format(v['hotspot_num']))
-	print("Kernel name: {}".format(k))
+	print("\nHotspot rank: {}".format(v['hotspot_rank']))
+	print("Kernel name: {}".format(name))
 	print("Percentage of total exec time: {}".format(v['percent_of_total']))
 	print("Total time (ms): {}".format(v['total_time']))
 	print("Instances:")
+	sol_ratio_sum = 0.0
+	sol_ratio_ct = 0
 	for instance in v['instances']:
 		print("\n- NVTX marker: {}".format(instance.mName))
 		kernel_dur_ms = 1.0 * instance.kDuration / 1e6
 		print("-- kernel duration: (ms) {}".format(kernel_dur_ms))
-		print(instance.mName)
 		try:
 			nvtx_data = eval(instance.mName)
 		except:
@@ -495,16 +497,16 @@ for name, v in sorted_k_dict:
 						fmas_per_tensor_core=64,
 						glob_mem_bandwidth_gb=900)
 			time_ms = 1.0 * time_s * 1e3
-			print("Kernel dur (ms): {}".format(kernel_dur_ms))
-			pct_of_sol = kernel_dur_ms / time_ms
-			print("-- Tensor Core SOL time (ms): {}".format(time_ms))
-			print("-- Ratio of actual to Tensor Core SOL time: {}".format(pct_of_sol))
-
+			sol_ratio = kernel_dur_ms / time_ms
+			sol_ratio_sum += sol_ratio
+			sol_ratio_ct += 1
+			print("--- Tensor Core SOL time (ms): {}".format(time_ms))
+			print("--- Ratio of actual to Tensor Core SOL time: {}".format(sol_ratio))
+	if sol_ratio_ct > 1:
+		print("-- Avg ratio of actual duration to SOL for this kernel {}".format(sol_ratio_sum / sol_ratio_ct))
 
 # {'op': 'conv2d', 'input_tensor': {'shape': (1, 1, 32, 32), 'type': 'float32'}, 'weight_tensor': {'shape': (6, 1, 5, 5), 'type': 'float32'}, 'stride': (1, 1), 'padding': (0, 0), 'dilation': (1, 1), 'groups': 1}
 		
-
-
 # N = batch size
 # C = number of input channels
 # H = height

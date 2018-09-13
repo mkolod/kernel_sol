@@ -1,7 +1,5 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 import torch.cuda.nvtx as nvtx
 import torch.cuda.profiler as profiler
 
@@ -137,108 +135,47 @@ class NvtxPatcher:
     def print_registered_functions(cls):
               print("Functions registered for NVTX range annotation:\n{}\n".format(str(cls.registry)))
 
+
+def monkey_patch_functional_api():    
+    patterns = ["conv[1-3]?(d|(\_transpose[1-3]d))",
+         "(un)?fold",
+         "(avg|max)_pool",
+         "max_unpool[1-3]d",
+         "lp_pool[1-3]d",
+         "adaptive_(avg|max)_pool[1-3]d",
+         "threshold",
+         "(leaky_)?[p-s]?r?elu_?6?",
+         "(hard)?tanh",
+         "glu",
+         "(log)?sigmoid",
+         "(hard|soft|tanh)shrink",
+         "soft(sign|plus|min)",
+         "(gumbel_|log_)?softmax",
+         "(batch|layer|instance|local_response)_norm",
+         "normalize",
+         "(bi)?linear",
+         "(alpha_)?dropout([2-3]d)?",
+         "embedding(_bag)?",
+         "pairwise_distance",
+         "cosine_similarity",
+         "(binary_)?cross_entropy",
+         "(poisson_)?nll_loss",
+         "(cosine|hinge)_embedding_loss",
+         "kl_div",
+         "((smooth_)?l1|mse)_loss",
+         "(multilabel|multi)?_margin_(soft_?)(ranking)?_loss",
+         "(soft|triplet)_margin_loss",
+         "pad",
+         "pixel_shuffle",
+         "interpolate",
+         "upsample_?(bilinear|nearest)?",
+         "(affine_)?grid(_sample)?"]
     
-patterns = ["conv[1-3]?(d|(\_transpose[1-3]d))",
-     "(un)?fold",
-     "(avg|max)_pool",
-     "max_unpool[1-3]d",
-     "lp_pool[1-3]d",
-     "adaptive_(avg|max)_pool[1-3]d",
-     "threshold",
-     "(leaky_)?[p-s]?r?elu_?6?",
-     "(hard)?tanh",
-     "glu",
-     "(log)?sigmoid",
-     "(hard|soft|tanh)shrink",
-     "soft(sign|plus|min)",
-     "(gumbel_|log_)?softmax",
-     "(batch|layer|instance|local_response)_norm",
-     "normalize",
-     "(bi)?linear",
-     "(alpha_)?dropout([2-3]d)?",
-     "embedding(_bag)?",
-     "pairwise_distance",
-     "cosine_similarity",
-     "(binary_)?cross_entropy",
-     "(poisson_)?nll_loss",
-     "(cosine|hinge)_embedding_loss",
-     "kl_div",
-     "((smooth_)?l1|mse)_loss",
-     "(multilabel|multi)?_margin_(soft_?)(ranking)?_loss",
-     "(soft|triplet)_margin_loss",
-     "pad",
-     "pixel_shuffle",
-     "interpolate",
-     "upsample_?(bilinear|nearest)?",
-     "(affine_)?grid(_sample)?"]
-
-NvtxPatcher.register_non_builtins(
-    torch.nn.functional, patterns)
-                    
-for i in range(1, 4):
-    NvtxPatcher.patch_conv(i)               
-    NvtxPatcher.patch_conv_transpose(i)
-
-print("built-ins (manual monkey-patching required):")
-print(NvtxPatcher.list_non_builtins(torch.nn.functional, patterns))
-                    
-NvtxPatcher.print_registered_functions()
-
-
-class LeNet5(nn.Module):
-
-    def __init__(self):
-        super(LeNet5, self).__init__()
-        # 1 input image channel, 6 output channels, 5x5 square convolution
-        # kernel
-        self.conv1 = nn.Conv2d(1, 6, 5)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        # an affine operation: y = Wx + b
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
-
-    def forward(self, x):
-        # Max pooling over a (2, 2) window
-        x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
-        # If the size is a square you can only specify a single number
-        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-        x = x.view(-1, self.num_flat_features(x))
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        x = F.softmax(x)
-        return x
-
-    def num_flat_features(self, x):
-        size = x.size()[1:]  # all dimensions except the batch dimension
-        num_features = 1
-        for s in size:
-            num_features *= s
-        return num_features
-
-
-with torch.autograd.profiler.emit_nvtx():
-
-  net = LeNet5().cuda()
-
-  bs = 512
-  input = torch.randn(bs, 1, 32, 32).cuda()
-  out = net(input)
-
-  target = torch.randn(bs, 10).cuda()  # a dummy target, for example
-  target = target.view(bs, -1)  # make it the same shape as output
-  criterion = nn.MSELoss()
-
-  # create your optimizer
-  optimizer = optim.SGD(net.parameters(), lr=0.01)
-
-  # in your training loop:
-  optimizer.zero_grad()   # zero the gradient buffers
-
-  profiler.start()
-  output = net(input)
-  loss = criterion(output, target)
-#  loss.backward()
-#  optimizer.step()    # Does the update
-  profiler.stop()
+    NvtxPatcher.register_non_builtins(
+        torch.nn.functional, patterns)
+                        
+    for i in range(1, 4):
+        NvtxPatcher.patch_conv(i)               
+        NvtxPatcher.patch_conv_transpose(i)
+    
+    NvtxPatcher.print_registered_functions()
