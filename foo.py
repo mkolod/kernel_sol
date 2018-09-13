@@ -98,7 +98,7 @@ class NvtxPatcher:
                 weight_dict = {'shape': tuple(weight.size()), 'type': str(weight.dtype).split(".")[-1]}
 
                 # Interpolate numbers as strings because some can be one-elem tuples as well
-                nvtx_str = "{op:'conv%sd', input_tensor:%s, weight_tensor:%s, stride:%s, padding:%s, dilation:%s, groups:%s}" % (dim_count, str(input_dict), str(weight_dict), str(stride), str(padding), str(dilation), str(groups))
+                nvtx_str = "{'op':'conv%sd', input_tensor:%s, weight_tensor:%s, stride:%s, padding:%s, dilation:%s, groups:%s}" % (dim_count, str(input_dict), str(weight_dict), str(stride), str(padding), str(dilation), str(groups))
                 nvtx.range_push(nvtx_str)
                 op = fun(input, weight, bias, stride, padding, dilation, groups)
                 nvtx.range_pop()
@@ -122,7 +122,7 @@ class NvtxPatcher:
                 input_dict = {'shape': tuple(input.size()), 'type': str(input.dtype).split(".")[-1]}
                 weight_dict = {'shape': tuple(weight.size()), 'type': str(weight.dtype).split(".")[-1]}
                 # Interpolate numbers as strings because some can be one-elem tuples as well
-                nvtx_str = "{op:'conv_transpose%sd', input_tensor:%s, weight_tensor:%s, stride:%s, padding:%s, output_padding:%s, groups:%s, dilation:%s}" % (dim_count, str(input_dict), str(weight_dict), str(stride), str(padding), str(output_padding), str(groups), str(dilation))
+                nvtx_str = "{'op':'conv_transpose%sd', input_tensor:%s, weight_tensor:%s, stride:%s, padding:%s, output_padding:%s, groups:%s, dilation:%s}" % (dim_count, str(input_dict), str(weight_dict), str(stride), str(padding), str(output_padding), str(groups), str(dilation))
                 nvtx.range_push(nvtx_str)
                 op = fun(input, weight, bias, stride, padding, dilation, groups)
                 nvtx.range_pop()
