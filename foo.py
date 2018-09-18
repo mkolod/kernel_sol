@@ -192,10 +192,10 @@ class LeNet5(nn.Module):
         super(LeNet5, self).__init__()
         # 1 input image channel, 6 output channels, 5x5 square convolution
         # kernel
-        self.conv1 = nn.Conv2d(1, 6, 5)
-        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.conv1 = nn.Conv2d(3, 8, 5)
+        self.conv2 = nn.Conv2d(8, 8, 5)
         # an affine operation: y = Wx + b
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc1 = nn.Linear(29768, 120) # 16 * 5 * 5
         self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, 10)
 
@@ -220,10 +220,17 @@ class LeNet5(nn.Module):
 
 with torch.autograd.profiler.emit_nvtx():
 
+  half = True
+
   net = LeNet5().cuda()
 
-  bs = 512
-  input = torch.randn(bs, 1, 32, 32).cuda()
+  bs = 128
+  input = torch.randn(bs, 3, 256, 256).cuda()
+
+  if half:
+    net = net.half()
+    input = input.half()
+
   out = net(input)
 
 #  target = torch.randn(bs, 10).cuda()  # a dummy target, for example
