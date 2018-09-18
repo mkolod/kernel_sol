@@ -72,7 +72,7 @@ def gemm_flops(M, N, K,
 	data_out_bytes = M * N * 2
 
 	gb = 1 << 30
-	dram_time_sec = (data_in_bytes + data_out_bytes) / (global_mem_bandwidth_gb * gb)
+	dram_time_sec = 1.0 * (data_in_bytes + data_out_bytes) / (global_mem_bandwidth_gb * gb)
 
 	max_fmas_per_sec =  num_sms * tensor_cores_per_sm * fmas_per_tensor_core * gpu_clock_mhz * 1e6
 	kernel_compute_time_sec = 1.0 * flops / max_fmas_per_sec
@@ -562,12 +562,14 @@ for name, v in sorted_k_dict:
 				M, K = in_dim
 				N = wt_dim[0] if (in_dim[1] == wt_dim[1]) else wt_dim[1]
 				print("M = %d, N = %d, K = %d" % (M, N, K))
-				_, sol_time_sec = gemm_flops(M, N, K)
+				flops, sol_time_sec = gemm_flops(M, N, K)
 				sol_time_ms = sol_time_sec * 1e3
 				sol_ratio = kernel_dur_ms / sol_time_ms
 				sol_ratio_sum += sol_ratio
 				sol_ratio_ct += 1
+				print("--- Flops: %d" % flops)
 				print("--- Tensor Core SOL time (ms): %.4f" % sol_time_ms)
+				print("--- Kernel duration (ms): %.4f" % kernel_dur_ms)
 				print("--- Ratio of actual to Tensor Core SOL time: %.4f" % sol_ratio)
 			else:
 				pass
