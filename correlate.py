@@ -55,6 +55,17 @@ def conv1d_2d_flops(N, C, H, W, K, R, S, PP_H, PP_W, SS_H, SS_W,
 
     return total_flops_per_batch, total_kernel_time_seconds
 
+
+def gemm_flops(M, N, K, 
+               gpu_clock=1082, 
+               num_sms=80,
+               tensor_cores_per_sm=8,
+               fmas_per_tensor_core=64,
+               global_mem_bandwidth_gb=900):
+    # TODO: implement GEMM FLOP calculators
+    pass
+
+
 class DB(object):
 
 	def __init__(self, dbFile):
@@ -479,18 +490,21 @@ for name, v in sorted_k_dict:
 	sol_ratio_sum = 0.0
 	sol_ratio_ct = 0
 	for instance in v['instances']:
-		print("\n- NVTX marker: {}".format(instance.mName))
+
 		kernel_dur_ms = 1.0 * instance.kDuration / 1e6
-		print("-- kernel duration: (ms) {}".format(kernel_dur_ms))
-		try:
+
+		if "conv" in instance.mName:
+
 			nvtx_data = eval(instance.mName)
-		except:
-			continue
-		if nvtx_data['op'] == 'conv2d':
 			N, C, H, W = nvtx_data['input_tensor']['shape']
 			K, _, R, S = nvtx_data['weight_tensor']['shape']
 			PP_H, PP_W = nvtx_data['padding']
 			SS_H, SS_W = nvtx_data['stride']
+			print("Input shape: %s" % str(nvtx_data['input_tensor']['shape']))
+			print("Weight shape: %s" % str(nvtx_data['weight_tensor']['shape']))
+			print("Padding: %s" % str(nvtx_data['padding']))
+			print("Stride: %s" % str(nvtx_data['stride']))
+			print("CONV SOL")
 			_, time_s = conv1d_2d_flops(N, C, H, W, K, R, S, PP_H, PP_W, SS_H, SS_W,
 						gpu_clock_mhz=1082, num_sms=80,
 						tensor_cores_per_sm=8,
@@ -502,8 +516,27 @@ for name, v in sorted_k_dict:
 			sol_ratio_ct += 1
 			print("--- Tensor Core SOL time (ms): {}".format(time_ms))
 			print("--- Ratio of actual to Tensor Core SOL time: {}".format(sol_ratio))
-	if sol_ratio_ct > 1:
-		print("-- Avg ratio of actual duration to SOL for this kernel {}".format(sol_ratio_sum / sol_ratio_ct))
+			if sol_ratio_ct > 1:
+				print("-- Avg ratio of actual duration to SOL for this kernel {}".format(sol_ratio_sum / sol_ratio_ct))
+
+		elif "linear" in instance.mName:
+			print("### LINEAR ###")
+			print("Input shape: %s" %str(nvtx_data['input_tensor']['shape']))
+			print("weight shape: %s" %str(nvtx_data['weight_tensor']['shape']))
+			in_dim = tuple(nvtx_data['input_tensor']['shape'])
+			wt_dim = tuple(nvtx_data['weight_tensor']['shape'])
+			if (len(in_dim) == 2 and len(wt_dim) == 2 and in_dim(1) == wt_dim(1)):
+				M, N = in_dim
+				K = wt_dim(0)
+				print("Need to implement SOL calculator")
+			else:
+				pass
+			# TODO: Call GEMM SOL calculator
+		else:
+			print("\n- NVTX marker: {}".format(instance.mName))
+
+#		kernel_dur_ms = 1.0 * instance.kDuration / 1e6
+#		print("-- kernel duration: (ms) {}".format(kernel_dur_ms))
 
 # {'op': 'conv2d', 'input_tensor': {'shape': (1, 1, 32, 32), 'type': 'float32'}, 'weight_tensor': {'shape': (6, 1, 5, 5), 'type': 'float32'}, 'stride': (1, 1), 'padding': (0, 0), 'dilation': (1, 1), 'groups': 1}
 		

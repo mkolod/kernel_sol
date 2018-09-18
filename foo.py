@@ -24,12 +24,12 @@ class NvtxPatcher:
             formal_arg_names = argspec.args
             s = "{'op':'%s'," % v.locals["func"].__name__
             for idx, val in enumerate(v.locals["args"]):
-                name = "'" + formal_arg_names[idx]
+                name = "" + formal_arg_names[idx]
                 if isinstance(val, torch.Tensor):
                     name += "_tensor"
                     value = {'shape': tuple(val.size()), 'type': str(val.dtype).split(".")[-1]}
                     val = value
-                    name += "'"
+                 #   name += "'"
                 s += "'%s':%s," % (name, str(val))
             num_def=len(argspec.defaults)
             defaults = dict(zip(argspec.args[-num_def:], argspec.defaults))
