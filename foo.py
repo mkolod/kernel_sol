@@ -187,6 +187,7 @@ NvtxPatcher.print_registered_functions()
 
 class LeNet5(nn.Module):
 
+
     def __init__(self):
         super(LeNet5, self).__init__()
         # 1 input image channel, 6 output channels, 5x5 square convolution
@@ -208,7 +209,6 @@ class LeNet5(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         x = F.softmax(x)
-        return x
 
     def num_flat_features(self, x):
         size = x.size()[1:]  # all dimensions except the batch dimension
@@ -226,19 +226,19 @@ with torch.autograd.profiler.emit_nvtx():
   input = torch.randn(bs, 1, 32, 32).cuda()
   out = net(input)
 
-  target = torch.randn(bs, 10).cuda()  # a dummy target, for example
-  target = target.view(bs, -1)  # make it the same shape as output
-  criterion = nn.MSELoss()
+#  target = torch.randn(bs, 10).cuda()  # a dummy target, for example
+#  target = target.view(bs, -1)  # make it the same shape as output
+#  criterion = nn.MSELoss()
 
   # create your optimizer
-  optimizer = optim.SGD(net.parameters(), lr=0.01)
+#  optimizer = optim.SGD(net.parameters(), lr=0.01)
 
   # in your training loop:
-  optimizer.zero_grad()   # zero the gradient buffers
+#  optimizer.zero_grad()   # zero the gradient buffers
 
   profiler.start()
-  output = net(input)
-  loss = criterion(output, target)
+  out = net(input)
+#  loss = criterion(output, target)
 #  loss.backward()
 #  optimizer.step()    # Does the update
   profiler.stop()

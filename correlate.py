@@ -45,25 +45,42 @@ def conv1d_2d_flops(N, C, H, W, K, R, S, PP_H, PP_W, SS_H, SS_W,
     gb = 1 << 30
     # fp16, so 2 bytes per element
     input_dims = N*C*W if H is None else N*C*H*W
-    dram_time_input = input_dims / (glob_mem_bandwidth_gb * gb)
-    dram_time_output = num_instances_per_filter * N * K / (glob_mem_bandwidth_gb * gb)
+    dram_time_input = 1.0 * input_dims / (glob_mem_bandwidth_gb * gb)
+    dram_time_output = 1.0 * num_instances_per_filter * N * K / (glob_mem_bandwidth_gb * gb)
     total_dram_time_sec = dram_time_input + dram_time_output
-    kernel_compute_time_seconds = total_flops_per_batch / max_fmas_per_sec
+    kernel_compute_time_seconds = 1.0 * total_flops_per_batch / max_fmas_per_sec
     # accounting for bandwidth- and compute-bound problems
     # memory requests are overlapped in compute_bound kernels
     total_kernel_time_seconds = max(kernel_compute_time_seconds, total_dram_time_sec)
 
     return total_flops_per_batch, total_kernel_time_seconds
 
-
+# M = number of rows in matrix A
+# N = number of columns in matrix B
+# K = number of columns in matrix A and rows in matrix B
 def gemm_flops(M, N, K, 
-               gpu_clock=1082, 
-               num_sms=80,
-               tensor_cores_per_sm=8,
-               fmas_per_tensor_core=64,
-               global_mem_bandwidth_gb=900):
-    # TODO: implement GEMM FLOP calculators
-    pass
+	gpu_clock_mhz=1082, 
+	num_sms=80,
+	tensor_cores_per_sm=8,
+	fmas_per_tensor_core=64,
+	global_mem_bandwidth_gb=900):
+
+	flops = M * N * K
+        # 2 for half
+	data_in_bytes = (M * K + K * N) * 2
+	# 2 for half
+	data_out_bytes = M * N * 2
+
+	gb = 1 << 30
+	dram_time_sec = (data_in_bytes + data_out_bytes) / (global_mem_bandwidth_gb * gb)
+
+	max_fmas_per_sec =  num_sms * tensor_cores_per_sm * fmas_per_tensor_core * gpu_clock_mhz * 1e6
+	kernel_compute_time_sec = 1.0 * flops / max_fmas_per_sec
+
+	total_kernel_time_sec = max(kernel_compute_time_sec, dram_time_sec)
+
+	# TODO: implement GEMM FLOP calculators
+	return flops, total_kernel_time_sec
 
 
 class DB(object):
@@ -480,108 +497,85 @@ for kernel in Kernel.kernels:
 
 sorted_k_dict = sorted(kernel_dict.items(), key=lambda x: x[1]['hotspot_rank'])
 
+blacklist = ["add", "pointwise", "offsets"]
+
+def match_bl(name):
+	lower = name.lower()
+	for item in blacklist:
+		if item in lower:
+			return True
+	return False
+
 for name, v in sorted_k_dict:
 #	print("{}: {}\n\n".format(name, v))
-	print("\nHotspot rank: {}".format(v['hotspot_rank']))
+	print("\n###############################")
+	print("Hotspot rank: {}".format(v['hotspot_rank']))
+	print("###############################\n")
 	print("Kernel name: {}".format(name))
-	print("Percentage of total exec time: {}".format(v['percent_of_total']))
-	print("Total time (ms): {}".format(v['total_time']))
-	print("Instances:")
+	print("Percentage of total exec time: %.4f" % v['percent_of_total'])
+	print("Total time (ms): %.4f" % v['total_time'])
 	sol_ratio_sum = 0.0
 	sol_ratio_ct = 0
+
+	if match_bl(name):
+		continue
+
 	for instance in v['instances']:
 
 		kernel_dur_ms = 1.0 * instance.kDuration / 1e6
 
 		if "conv" in instance.mName:
-
 			nvtx_data = eval(instance.mName)
 			N, C, H, W = nvtx_data['input_tensor']['shape']
 			K, _, R, S = nvtx_data['weight_tensor']['shape']
 			PP_H, PP_W = nvtx_data['padding']
 			SS_H, SS_W = nvtx_data['stride']
+			print("\n### CONV")
 			print("Input shape: %s" % str(nvtx_data['input_tensor']['shape']))
 			print("Weight shape: %s" % str(nvtx_data['weight_tensor']['shape']))
 			print("Padding: %s" % str(nvtx_data['padding']))
 			print("Stride: %s" % str(nvtx_data['stride']))
-			print("CONV SOL")
-			_, time_s = conv1d_2d_flops(N, C, H, W, K, R, S, PP_H, PP_W, SS_H, SS_W,
+			_, sol_time_s = conv1d_2d_flops(N, C, H, W, K, R, S, PP_H, PP_W, SS_H, SS_W,
 						gpu_clock_mhz=1082, num_sms=80,
 						tensor_cores_per_sm=8,
 						fmas_per_tensor_core=64,
 						glob_mem_bandwidth_gb=900)
-			time_ms = 1.0 * time_s * 1e3
-			sol_ratio = kernel_dur_ms / time_ms
+			sol_time_ms = 1.0 * sol_time_s * 1e3
+			sol_ratio = kernel_dur_ms / sol_time_ms
 			sol_ratio_sum += sol_ratio
 			sol_ratio_ct += 1
-			print("--- Tensor Core SOL time (ms): {}".format(time_ms))
-			print("--- Ratio of actual to Tensor Core SOL time: {}".format(sol_ratio))
-			if sol_ratio_ct > 1:
-				print("-- Avg ratio of actual duration to SOL for this kernel {}".format(sol_ratio_sum / sol_ratio_ct))
+			print("--- Tensor Core SOL time (ms): %.6f" % sol_time_ms)
+			print("--- Kernel duration (ms): %.6f" % kernel_dur_ms)
+			print("--- Ratio of actual to Tensor Core SOL time: %.4f" % sol_ratio)
 
 		elif "linear" in instance.mName:
-			print("### LINEAR ###")
+			nvtx_data = eval(instance.mName)
+
+#			print("\n- NVTX marker: {}".format(instance.mName))
+
+			print("\n### GEMM")
 			print("Input shape: %s" %str(nvtx_data['input_tensor']['shape']))
 			print("weight shape: %s" %str(nvtx_data['weight_tensor']['shape']))
-			in_dim = tuple(nvtx_data['input_tensor']['shape'])
-			wt_dim = tuple(nvtx_data['weight_tensor']['shape'])
-			if (len(in_dim) == 2 and len(wt_dim) == 2 and in_dim(1) == wt_dim(1)):
-				M, N = in_dim
-				K = wt_dim(0)
-				print("Need to implement SOL calculator")
+			in_dim = nvtx_data['input_tensor']['shape']
+			wt_dim = nvtx_data['weight_tensor']['shape']
+			if (len(in_dim) == 2 and len(wt_dim) == 2):
+				M, K = in_dim
+				N = wt_dim[0] if (in_dim[1] == wt_dim[1]) else wt_dim[1]
+				print("M = %d, N = %d, K = %d" % (M, N, K))
+				_, sol_time_sec = gemm_flops(M, N, K)
+				sol_time_ms = sol_time_sec * 1e3
+				sol_ratio = kernel_dur_ms / sol_time_ms
+				sol_ratio_sum += sol_ratio
+				sol_ratio_ct += 1
+				print("--- Tensor Core SOL time (ms): %.4f" % sol_time_ms)
+				print("--- Ratio of actual to Tensor Core SOL time: %.4f" % sol_ratio)
 			else:
 				pass
-			# TODO: Call GEMM SOL calculator
 		else:
-			print("\n- NVTX marker: {}".format(instance.mName))
-
-#		kernel_dur_ms = 1.0 * instance.kDuration / 1e6
-#		print("-- kernel duration: (ms) {}".format(kernel_dur_ms))
-
-# {'op': 'conv2d', 'input_tensor': {'shape': (1, 1, 32, 32), 'type': 'float32'}, 'weight_tensor': {'shape': (6, 1, 5, 5), 'type': 'float32'}, 'stride': (1, 1), 'padding': (0, 0), 'dilation': (1, 1), 'groups': 1}
-		
-# N = batch size
-# C = number of input channels
-# H = height
-# W = width
-# K = number of output channels
-# R = filter height
-# S = filter width
-# PP_H = padding for height (symmetric padding assumed)
-# PP_W = padding for width (symmetric padding assumed)
-# SS_H = stride for height (symmetric stride assumed)
-# SS_W = stride for width (symmetric stride assumed)
-#def conv1d_2d_flops(N, C, H, W, K, R, S, PP_H, PP_W, SS_H, SS_W,
-#                    gpu_clock_mhz=1082,
-#                    num_sms=80, tensor_cores_per_sm=8, fmas_per_tensor_core=64,
-#                    glob_mem_bandwidth_gb=900):
-
-#for hs_name in hs_names:
-#	if hs_name in kernel_dict:
-#		print(kernel_dict[hs_name]) 
-
-#	if sys.stdout.isatty():
-#
-#		print(
-#
-#			colored(kernel.kName, 'green'),
-#
-#			colored(kernel.mName, 'red')
-#
-#		)
-#
-#	else:
-#
-#		print(kernel.kName, kernel.mName)
-
-
-
-#Print info
-
-#for kernel in Kernel.kernels:
-
-#	print(kernel.__dict__)
-
-
+			print("\nNo analysis available. NVTX annotation:")
+			print(instance.mName)
+			
+	if sol_ratio_ct > 1:
+		print("\n### Avg ratio of actual duration to SOL for this kernel %.4f" % (1.0 * sol_ratio_sum / sol_ratio_ct))
 
 db.close()
